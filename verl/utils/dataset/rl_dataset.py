@@ -159,9 +159,9 @@ class RLHFDataset(Dataset):
         for parquet_file in self.data_files:
             # read files and cache
             if parquet_file.endswith(".parquet"):
-                dataframe = datasets.load_dataset("parquet", data_files=parquet_file, cache_dir=self.cache_dir)["train"]
+                dataframe = datasets.Dataset.from_parquet(parquet_file, cache_dir=self.cache_dir)
             elif parquet_file.endswith(".json") or parquet_file.endswith(".jsonl"):
-                dataframe = datasets.load_dataset("json", data_files=parquet_file, cache_dir=self.cache_dir)["train"]
+                dataframe = datasets.Dataset.from_json(parquet_file, cache_dir=self.cache_dir)
             else:
                 raise ValueError(f"Unsupported file format: {parquet_file}")
             dataframes.append(dataframe)
