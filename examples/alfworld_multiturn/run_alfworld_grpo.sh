@@ -9,6 +9,28 @@ TRAIN_FILE="${ALFWORLD_TRAIN_FILE:-$HOME/data/alfworld_multiturn/train.parquet}"
 VAL_FILE="${ALFWORLD_VAL_FILE:-$HOME/data/alfworld_multiturn/valid_seen.parquet}"
 MODEL_PATH="${MODEL_PATH:-Qwen/Qwen2.5-3B-Instruct}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-alfworld_textworld_grpo}"
+HF_HOME="${HF_HOME:-/storage/v-jinpewang/az_workspace/zhanglin/reproduction/lwb/hf_cache}"
+HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
+TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
+VERL_DATA_CACHE_DIR="${VERL_DATA_CACHE_DIR:-/storage/v-jinpewang/az_workspace/zhanglin/reproduction/lwb/verl_cache}"
+TMPDIR="${TMPDIR:-/tmp/verl_tmp}"
+TMP="${TMP:-$TMPDIR}"
+TEMP="${TEMP:-$TMPDIR}"
+RAY_TMPDIR="${RAY_TMPDIR:-/tmp/ray}"
+
+mkdir -p "$HF_DATASETS_CACHE"
+mkdir -p "$TRANSFORMERS_CACHE"
+mkdir -p "$VERL_DATA_CACHE_DIR"
+mkdir -p "$TMPDIR"
+mkdir -p "$RAY_TMPDIR"
+
+export HF_HOME
+export HF_DATASETS_CACHE
+export TRANSFORMERS_CACHE
+export TMPDIR
+export TMP
+export TEMP
+export RAY_TMPDIR
 
 python3 -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
@@ -18,6 +40,7 @@ python3 -m verl.trainer.main_ppo \
     data.max_response_length=8192 \
     data.train_files="$TRAIN_FILE" \
     data.val_files="$VAL_FILE" \
+    +data.cache_dir="$VERL_DATA_CACHE_DIR" \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     actor_rollout_ref.model.path="$MODEL_PATH" \
@@ -46,6 +69,8 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger='["console","wandb"]' \
     trainer.project_name='alfworld-textworld-tool-grpo' \
     trainer.experiment_name="$EXPERIMENT_NAME" \
+    trainer.n_gpus_per_node=2 \
+    trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=20 \
     trainer.total_epochs=10 \
