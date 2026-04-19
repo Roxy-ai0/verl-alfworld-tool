@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import copy
+import json
 import logging
 import os
 import re
@@ -25,6 +26,7 @@ from typing import Optional
 
 import datasets
 import numpy as np
+import pandas as pd
 import torch
 from omegaconf import DictConfig, ListConfig
 from PIL import Image
@@ -159,9 +161,9 @@ class RLHFDataset(Dataset):
         for parquet_file in self.data_files:
             # read files and cache
             if parquet_file.endswith(".parquet"):
-                dataframe = datasets.Dataset.from_parquet(parquet_file, cache_dir=self.cache_dir)
+                dataframe = self._load_local_parquet_dataset(parquet_file)
             elif parquet_file.endswith(".json") or parquet_file.endswith(".jsonl"):
-                dataframe = datasets.Dataset.from_json(parquet_file, cache_dir=self.cache_dir)
+                dataframe = self._load_local_json_dataset(parquet_file)
             else:
                 raise ValueError(f"Unsupported file format: {parquet_file}")
             dataframes.append(dataframe)
@@ -181,6 +183,22 @@ class RLHFDataset(Dataset):
             print(f"selected {self.max_samples} random samples out of {total}")
 
         self.dataframe = self.maybe_filter_out_long_prompts(self.dataframe)
+
+    def _load_local_parquet_dataset(self, parquet_file: str) -> datasets.Dataset:
+        dataframe = pd.read_parquet(parquet_file)
+        return datasets.Dataset.from_pandas(dataframe, preserve_index=False)
+
+    def _load_local_json_dataset(self, json_file: str) -> datasets.Dataset:
+        if json_file.endswith(".jsonl"):
+            dataframe = pd.read_json(json_file, lines=True)
+        else:
+            with open(json_file, encoding="utf-8") as f:
+                raw_data = json.load(f)
+            if isinstance(raw_data, list):
+                dataframe = pd.DataFrame(raw_data)
+            else:
+                raise ValueError(f"JSON file must contain a list of records: {json_file}")
+        return datasets.Dataset.from_pandas(dataframe, preserve_index=False)
 
     def maybe_filter_out_long_prompts(self, dataframe: datasets.Dataset = None):
         # filter out too long prompts
