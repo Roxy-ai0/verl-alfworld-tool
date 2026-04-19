@@ -23,23 +23,11 @@ DEFAULT_SYSTEM_PROMPT_TEMPLATE = """In this environment you have access to a set
 Here are available functions in JSONSchema format:
 
 {tool_schema}
-In your response, you need to first think about the reasoning process in the mind and then conduct function calling to get the information or perform the actions if needed. The reasoning process and function calling are enclosed within <think> </think> and <tool_call> </tool_call> tags.
+In your response, you should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
 
-The results of the function calls will be given back to you after execution, and you can continue to call functions until you get the final answer for the user's query.
+Once you have finished your reasoning, you should choose exactly one admissible action for the current step and call the tool by presenting the function call within <tool_call> </tool_call> tags.
 
-Important rules:
-
-At each round, call exactly one function.
-The function arguments must contain exactly one action.
-You must choose the action from the admissible actions provided in the current situation.
-Do not invent actions that are not in the admissible action list.
-If the environment indicates the task is finished, stop calling functions and provide a short plain-text final answer.
-Keep your output concise and focused on the next action.
-
-For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
-<tool_call>
-{{"name": <function-name>, "arguments": <args-json-object>}}
-</tool_call>"""
+The results of the function calls will be given back to you after execution, and you can continue to call functions until you get the final answer for the user's query."""
 
 DEFAULT_USER_PROMPT_TEMPLATE = """Your task is: {task_description}
 
@@ -65,7 +53,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--index", type=int, default=None, help="Use a fixed sample index instead of random pick.")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max_new_tokens", type=int, default=256)
-    parser.add_argument("--max_turns", type=int, default=1, help="Maximum assistant turns to debug.")
+    parser.add_argument("--max_turns", type=int, default=50, help="Maximum assistant turns to debug.")
+    parser.add_argument(
+        "--memory_k",
+        type=int,
+        default=2,
+        help="Number of most recent assistant/tool rounds visible to the model each turn.",
+    )
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--trust_remote_code", action="store_true")
@@ -174,27 +168,50 @@ def _read_text_if_needed(path: str | None) -> str | None:
 
 
 def _build_system_prompt_text(tool_schemas: list[dict[str, Any]], override_text: str | None) -> str:
-    if override_text is not None:
-        return override_text
-    return DEFAULT_SYSTEM_PROMPT_TEMPLATE.format(
-        tool_schema=json.dumps(tool_schemas, ensure_ascii=False, indent=2)
-    )
+    template = override_text if override_text is not None else DEFAULT_SYSTEM_PROMPT_TEMPLATE
+    return template.format(tool_schema=json.dumps(tool_schemas, ensure_ascii=False, indent=2))
 
 
-def _build_user_prompt_text(row: dict[str, Any], override_text: str | None) -> str:
-    if override_text is not None:
-        return override_text.format(
-            task_description=row.get("task_description", ""),
-            current_observation=row.get("current_observation", ""),
-            admissible_actions=render_actions_json(row.get("admissible_actions", [])),
-        )
-
+def _initial_state_from_row(row: dict[str, Any]) -> dict[str, Any]:
     extra_info = row.get("extra_info") or {}
     task_metadata = extra_info.get("task_metadata") or {}
-    return DEFAULT_USER_PROMPT_TEMPLATE.format(
-        task_description=task_metadata.get("task_description", row.get("task_description", "")),
-        current_observation=row.get("current_observation", ""),
-        admissible_actions=render_actions_json(row.get("admissible_actions", [])),
+    return {
+        "task_description": task_metadata.get("task_description", row.get("task_description", "")),
+        "current_observation": row.get("current_observation", ""),
+        "admissible_actions": list(row.get("admissible_actions", []) or []),
+        "done": False,
+        "success": False,
+        "final_env_score": 0.0,
+        "step_id": 0,
+        "invalid_action_count": 0,
+    }
+
+
+def _current_state(agent_data: Any, fallback_state: dict[str, Any]) -> dict[str, Any]:
+    extra_fields = getattr(agent_data, "extra_fields", {}) or {}
+    state = dict(fallback_state)
+    for key in (
+        "task_description",
+        "current_observation",
+        "admissible_actions",
+        "done",
+        "success",
+        "final_env_score",
+        "step_id",
+        "invalid_action_count",
+    ):
+        if key in extra_fields:
+            state[key] = extra_fields[key]
+    state["admissible_actions"] = list(state.get("admissible_actions", []) or [])
+    return state
+
+
+def _build_user_prompt_text(state: dict[str, Any], override_text: str | None) -> str:
+    template = override_text if override_text is not None else DEFAULT_USER_PROMPT_TEMPLATE
+    return template.format(
+        task_description=state.get("task_description", ""),
+        current_observation=state.get("current_observation", ""),
+        admissible_actions=render_actions_json(state.get("admissible_actions", [])),
     )
 
 
@@ -247,6 +264,81 @@ def _generate_one_turn(
     return new_token_ids, raw_output
 
 
+def _recent_visible_messages(round_history: list[tuple[dict[str, Any], dict[str, Any]]], memory_k: int) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
+    for assistant_message, tool_message in round_history[-memory_k:]:
+        messages.append(dict(assistant_message))
+        messages.append(dict(tool_message))
+    return messages
+
+
+def _build_visible_messages(
+    *,
+    system_prompt_text: str,
+    user_prompt_text: str,
+    round_history: list[tuple[dict[str, Any], dict[str, Any]]],
+    memory_k: int,
+) -> list[dict[str, Any]]:
+    messages = [{"role": "system", "content": system_prompt_text}]
+    messages.extend(_recent_visible_messages(round_history, memory_k))
+    messages.append({"role": "user", "content": user_prompt_text})
+    return messages
+
+
+def _serialize_tool_calls(tool_calls: list[Any]) -> list[dict[str, Any]]:
+    serialized = []
+    for tool_call in tool_calls:
+        serialized.append({"name": tool_call.name, "arguments": tool_call.arguments})
+    return serialized
+
+
+def _print_state(label: str, state: dict[str, Any]) -> None:
+    print(label)
+    print(f"task_description: {state.get('task_description', '')}")
+    print(f"current_observation: {state.get('current_observation', '')}")
+    print(f"admissible_actions: {render_actions_json(state.get('admissible_actions', []))}")
+    print(
+        "done: {done} | success: {success} | score: {score} | step_id: {step_id} | invalid_action_count: {invalid}".format(
+            done=state.get("done", False),
+            success=state.get("success", False),
+            score=state.get("final_env_score", 0.0),
+            step_id=state.get("step_id", 0),
+            invalid=state.get("invalid_action_count", 0),
+        )
+    )
+
+
+def _print_full_trajectory(trajectory: list[dict[str, Any]]) -> None:
+    print("=" * 80)
+    print("Full trajectory replay:")
+    for record in trajectory:
+        turn = record["turn"]
+        print("=" * 80)
+        print(f"Turn {turn}")
+        _print_state("State before turn:", record["state_before"])
+        print("-" * 80)
+        print("Assistant output:")
+        print(record["assistant_output"])
+        print("-" * 80)
+        print(
+            f"Contains <think>: {record['contains_think']} | Contains <tool_call>: {record['contains_tool_call']} | Parsed tool calls: {record['parsed_tool_call_count']}"
+        )
+        if record["parsed_content"]:
+            print("Parsed content:")
+            print(record["parsed_content"])
+        if record["tool_call"] is not None:
+            print("Tool call:")
+            print(json.dumps(record["tool_call"], ensure_ascii=False))
+            print(f"Tool reward: {record['tool_reward']}")
+            print(f"Tool metrics: {json.dumps(record['tool_metrics'], ensure_ascii=False)}")
+            print("Tool response:")
+            print(record["tool_response"])
+            _print_state("State after tool:", record["state_after"])
+        else:
+            print("No tool executed on this turn.")
+        print(f"Termination reason after turn: {record['termination_reason']}")
+
+
 async def _execute_tool_call(
     tool_name: str,
     tool_args: dict[str, Any],
@@ -270,11 +362,6 @@ def main() -> None:
     system_prompt_override = _read_text_if_needed(args.system_prompt_path)
     user_prompt_override = _read_text_if_needed(args.user_prompt_path)
     system_prompt_text = _build_system_prompt_text(tool_schemas, system_prompt_override)
-    user_prompt_text = _build_user_prompt_text(row, user_prompt_override)
-    messages = [
-        {"role": "system", "content": system_prompt_text},
-        {"role": "user", "content": user_prompt_text},
-    ]
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=args.trust_remote_code)
     if tokenizer.pad_token_id is None:
@@ -297,21 +384,40 @@ def main() -> None:
         extra_fields={},
     )
     parser = ToolParser.get_tool_parser("hermes", tokenizer)
+    initial_state = _initial_state_from_row(row)
+    round_history: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    full_round_history: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    trajectory: list[dict[str, Any]] = []
 
     print("=" * 80)
     print(f"Sample index: {sample_index}")
     print(f"Data source: {row.get('data_source')}")
+    print(f"Dual-memory window k: {args.memory_k}")
+    print(f"Max turns: {args.max_turns}")
     print("=" * 80)
     print("System prompt:")
     print(system_prompt_text)
-    print("=" * 80)
-    print("User prompt:")
-    print(user_prompt_text)
 
+    termination_reason = "max_turns_reached"
     for turn in range(1, args.max_turns + 1):
-        prompt_text = _build_prompt_text(tokenizer, messages, tool_schemas)
+        state_before = _current_state(agent_data, initial_state)
+        user_prompt_text = _build_user_prompt_text(state_before, user_prompt_override)
+        visible_messages = _build_visible_messages(
+            system_prompt_text=system_prompt_text,
+            user_prompt_text=user_prompt_text,
+            round_history=round_history,
+            memory_k=args.memory_k,
+        )
+        prompt_text = _build_prompt_text(tokenizer, visible_messages, tool_schemas)
+
+        print("=" * 80)
+        print(f"Turn {turn} visible context:")
+        print(f"visible_history_rounds: {min(len(round_history), args.memory_k)} / full_history_rounds: {len(full_round_history)}")
+        _print_state("Current task state:", state_before)
+        print("-" * 80)
+        print("Current user prompt:")
+        print(user_prompt_text)
         if args.show_rendered_prompt:
-            print("=" * 80)
             print(f"Rendered model prompt before turn {turn}:")
             print(prompt_text)
 
@@ -325,17 +431,45 @@ def main() -> None:
         print(f"Contains <think>: {'<think>' in raw_output and '</think>' in raw_output}")
         print(f"Contains <tool_call>: {'<tool_call>' in raw_output and '</tool_call>' in raw_output}")
         print(f"Parsed tool calls: {len(tool_calls)}")
-
-        messages.append({"role": "assistant", "content": raw_output})
+        assistant_message = {"role": "assistant", "content": raw_output}
+        turn_record = {
+            "turn": turn,
+            "state_before": state_before,
+            "visible_messages": visible_messages,
+            "assistant_output": raw_output,
+            "contains_think": "<think>" in raw_output and "</think>" in raw_output,
+            "contains_tool_call": "<tool_call>" in raw_output and "</tool_call>" in raw_output,
+            "parsed_tool_call_count": len(tool_calls),
+            "parsed_tool_calls": _serialize_tool_calls(tool_calls),
+            "parsed_content": parsed_content,
+            "tool_call": None,
+            "tool_reward": None,
+            "tool_metrics": None,
+            "tool_response": None,
+            "state_after": None,
+            "termination_reason": None,
+        }
 
         if not tool_calls:
             print("Parsed content without tool calls:")
             print(parsed_content)
+            termination_reason = "no_tool_call"
+            turn_record["termination_reason"] = termination_reason
+            trajectory.append(turn_record)
             break
 
         first_tool_call = tool_calls[0]
         print(f"[tool_call] name={first_tool_call.name} arguments={first_tool_call.arguments}")
-        tool_args = json.loads(first_tool_call.arguments)
+        turn_record["tool_call"] = {"name": first_tool_call.name, "arguments": first_tool_call.arguments}
+        try:
+            tool_args = json.loads(first_tool_call.arguments)
+        except json.JSONDecodeError:
+            print("Tool arguments are not valid JSON. Stopping.")
+            termination_reason = "invalid_tool_arguments_json"
+            turn_record["termination_reason"] = termination_reason
+            trajectory.append(turn_record)
+            break
+
         tool_response, tool_reward, tool_metrics = asyncio.run(
             _execute_tool_call(first_tool_call.name, tool_args, tool_map, agent_data)
         )
@@ -344,13 +478,39 @@ def main() -> None:
         print(f"Tool metrics: {tool_metrics}")
         print("Tool response:")
         print(tool_response.text or "")
-
-        messages.append({"role": "tool", "content": tool_response.text or ""})
+        tool_message = {"role": "tool", "content": tool_response.text or ""}
+        full_round_history.append((assistant_message, tool_message))
+        round_history = full_round_history[-args.memory_k :]
+        state_after = _current_state(agent_data, state_before)
+        turn_record["tool_reward"] = tool_reward
+        turn_record["tool_metrics"] = tool_metrics
+        turn_record["tool_response"] = tool_response.text or ""
+        turn_record["state_after"] = state_after
 
         if agent_data.extra_fields.get("done"):
             print("-" * 80)
             print("Episode marked done by tool session.")
+            termination_reason = "episode_done"
+            turn_record["termination_reason"] = termination_reason
+            trajectory.append(turn_record)
             break
+
+        termination_reason = "continue"
+        turn_record["termination_reason"] = termination_reason
+        trajectory.append(turn_record)
+
+    if trajectory and trajectory[-1]["termination_reason"] == "continue":
+        trajectory[-1]["termination_reason"] = "max_turns_reached"
+        termination_reason = "max_turns_reached"
+
+    print("=" * 80)
+    print(f"Run finished with termination_reason={termination_reason}")
+    if trajectory:
+        final_state = trajectory[-1]["state_after"] or trajectory[-1]["state_before"]
+    else:
+        final_state = _current_state(agent_data, initial_state)
+    _print_state("Final state:", final_state)
+    _print_full_trajectory(trajectory)
 
 
 if __name__ == "__main__":
