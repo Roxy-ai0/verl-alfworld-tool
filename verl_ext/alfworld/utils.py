@@ -149,6 +149,49 @@ def build_single_game_env(session_init: dict[str, Any]) -> tuple[Any, str, list[
     return env, current_observation, admissible, task_description
 
 
+def build_single_game_env_fast(
+    runtime_config: dict[str, Any],
+    *,
+    game_file: str,
+    train_eval: str,
+    task_description: str = "",
+) -> tuple[Any, str, list[str], str]:
+    """Build a single-game ALFWorld TextWorld env without scanning the whole split.
+
+    This is intended for dataset preprocessing, where we already know the exact game file
+    and only need one reset to capture the initial observation and admissible actions.
+    """
+    ensure_alfworld_available()
+
+    import textworld
+    import textworld.gym
+    from alfworld.agents.environment.alfred_tw_env import AlfredDemangler, AlfredInfos
+
+    domain_randomization = bool(runtime_config["env"].get("domain_randomization", False))
+    if train_eval != "train":
+        domain_randomization = False
+
+    max_nb_steps_per_episode = int(runtime_config["dagger"]["training"]["max_nb_steps_per_episode"])
+    request_infos = textworld.EnvInfos(won=True, admissible_commands=True, extras=["gamefile"])
+    wrappers = [AlfredDemangler(shuffle=domain_randomization), AlfredInfos]
+
+    env_id = textworld.gym.register_games(
+        [os.path.abspath(game_file)],
+        request_infos,
+        batch_size=1,
+        asynchronous=True,
+        max_episode_steps=max_nb_steps_per_episode,
+        wrappers=wrappers,
+    )
+    env = textworld.gym.make(env_id)
+    observations, infos = env.reset()
+    observation = str(first_batch_item(observations)).strip()
+    admissible = normalize_action_list(first_batch_item(infos["admissible_commands"]))
+    parsed_task_description, current_observation = extract_task_and_observation(observation)
+    final_task_description = parsed_task_description or str(task_description).strip()
+    return env, current_observation, admissible, final_task_description
+
+
 def close_env_quietly(env: Any) -> None:
     if env is None:
         return

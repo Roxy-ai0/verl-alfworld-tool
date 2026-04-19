@@ -6,7 +6,8 @@ import datasets
 
 from verl_ext.alfworld.dataset import build_dataset_row
 from verl_ext.alfworld.utils import (
-    build_single_game_env,
+    apply_textworld_overrides,
+    build_single_game_env_fast,
     close_env_quietly,
     discover_game_files,
     get_task_description_from_traj_data,
@@ -48,6 +49,7 @@ def parse_args() -> argparse.Namespace:
 
 def build_split_dataset(config_path: str, split: str, max_samples: int) -> datasets.Dataset:
     config = load_runtime_config(config_path)
+    runtime_config = apply_textworld_overrides(config)
     rows = discover_game_files(config, split)
     if max_samples > 0:
         rows = rows[:max_samples]
@@ -63,7 +65,12 @@ def build_split_dataset(config_path: str, split: str, max_samples: int) -> datas
 
         env = None
         try:
-            env, current_observation, admissible_actions, task_description = build_single_game_env(session_init)
+            env, current_observation, admissible_actions, task_description = build_single_game_env_fast(
+                runtime_config,
+                game_file=row["game_file"],
+                train_eval=split,
+                task_description=session_init["task_description"],
+            )
         finally:
             close_env_quietly(env)
 

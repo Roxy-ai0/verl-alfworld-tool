@@ -14,6 +14,8 @@ python3 -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
     --config-name='alfworld_grpo' \
     algorithm.adv_estimator=grpo \
+    data.max_prompt_length=4096 \
+    data.max_response_length=8192 \
     data.train_files="$TRAIN_FILE" \
     data.val_files="$VAL_FILE" \
     data.filter_overlong_prompts=True \
@@ -35,6 +37,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
     actor_rollout_ref.rollout.n=8 \
     actor_rollout_ref.rollout.mode=async \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
+    actor_rollout_ref.rollout.multi_turn.max_assistant_turns=50 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.use_kl_in_reward=False \
