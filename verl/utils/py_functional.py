@@ -359,10 +359,20 @@ def convert_nested_value_to_list_recursive(data_item):
 def list_of_dict_to_dict_of_list(list_of_dict: list[dict]):
     if len(list_of_dict) == 0:
         return {}
-    keys = list_of_dict[0].keys()
+
+    # Different samples may carry different optional non-tensor fields, especially in
+    # multi-turn tool trajectories where some samples terminate before any tool call.
+    # Use the union of keys and fill missing entries with None so batch concat remains stable.
+    keys: list[str] = []
+    seen = set()
+    for data in list_of_dict:
+        for key in data.keys():
+            if key not in seen:
+                seen.add(key)
+                keys.append(key)
+
     output = {key: [] for key in keys}
     for data in list_of_dict:
-        for key, item in data.items():
-            assert key in output, f"Key '{key}' is not present in the keys of the first dictionary in the list."
-            output[key].append(item)
+        for key in keys:
+            output[key].append(data.get(key, None))
     return output
