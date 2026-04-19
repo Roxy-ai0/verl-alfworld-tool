@@ -19,6 +19,9 @@ reward:
 
 actor_rollout_ref:
   hybrid_engine: True
+  model:
+    override_config:
+      attn_implementation: eager
   rollout:
     name: vllm
     multi_turn:
