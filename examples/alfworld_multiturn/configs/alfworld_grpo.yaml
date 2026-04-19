@@ -20,7 +20,7 @@ reward:
 actor_rollout_ref:
   hybrid_engine: True
   rollout:
-    name: sglang
+    name: vllm
     multi_turn:
       enable: True
       format: hermes

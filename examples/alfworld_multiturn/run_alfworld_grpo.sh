@@ -9,6 +9,7 @@ TRAIN_FILE="${ALFWORLD_TRAIN_FILE:-$HOME/data/alfworld_multiturn/train.parquet}"
 VAL_FILE="${ALFWORLD_VAL_FILE:-$HOME/data/alfworld_multiturn/valid_seen.parquet}"
 MODEL_PATH="${MODEL_PATH:-Qwen/Qwen2.5-3B-Instruct}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-alfworld_textworld_grpo}"
+ROLLOUT_NAME="${ROLLOUT_NAME:-vllm}"
 HF_HOME="${HF_HOME:-/storage/v-jinpewang/az_workspace/zhanglin/reproduction/lwb/hf_cache}"
 HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
 TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
@@ -31,6 +32,7 @@ export TMPDIR
 export TMP
 export TEMP
 export RAY_TMPDIR
+export VLLM_USE_V1="${VLLM_USE_V1:-1}"
 
 python3 -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
@@ -56,6 +58,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
+    actor_rollout_ref.rollout.name="$ROLLOUT_NAME" \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.75 \
     actor_rollout_ref.rollout.n=8 \
