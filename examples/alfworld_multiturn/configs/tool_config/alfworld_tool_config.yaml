@@ -1,0 +1,19 @@
+tools:
+  - class_name: "verl_ext.alfworld.tool.AlfworldStepTool"
+    config:
+      type: native
+      completed_session_ttl_seconds: 900
+      max_sessions: 4096
+    tool_schema:
+      type: "function"
+      function:
+        name: "alfworld_step"
+        description: "Execute exactly one admissible action in the current ALFWorld TextWorld episode."
+        strict: true
+        parameters:
+          type: "object"
+          properties:
+            action:
+              type: "string"
+              description: "One admissible action from the current ALFWorld situation."
+          required: ["action"]

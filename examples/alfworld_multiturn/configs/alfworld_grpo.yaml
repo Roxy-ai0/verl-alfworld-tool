@@ -1,0 +1,31 @@
+hydra:
+  searchpath:
+    - file://verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  max_prompt_length: 4096
+  max_response_length: 2048
+  train_batch_size: 128
+  return_raw_chat: True
+
+reward:
+  custom_reward_function:
+    path: verl_ext/alfworld/reward.py
+    name: compute_score
+
+actor_rollout_ref:
+  hybrid_engine: True
+  rollout:
+    name: sglang
+    multi_turn:
+      enable: True
+      format: hermes
+      max_assistant_turns: 40
+      max_parallel_calls: 1
+      max_tool_response_length: 4096
+      tool_response_truncate_side: middle
+      tool_config_path: examples/alfworld_multiturn/configs/tool_config/alfworld_tool_config.yaml
