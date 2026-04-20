@@ -38,7 +38,7 @@ python3 -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
     --config-name='alfworld_grpo' \
     algorithm.adv_estimator=grpo \
-    data.max_prompt_length=4096 \
+    data.max_prompt_length=8192 \
     data.max_response_length=8192 \
     data.train_files="$TRAIN_FILE" \
     data.val_files="$VAL_FILE" \
