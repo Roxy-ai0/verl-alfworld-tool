@@ -5,6 +5,7 @@ from typing import Any
 from verl.tools.base_tool import BaseTool
 from verl.tools.schemas import OpenAIFunctionToolSchema, ToolResponse
 
+from .agent_loop import INVALID_TOOL_RESPONSE_TEXT
 from .session_registry import get_or_create_session, mark_finished, snapshot
 from .utils import (
     admissible_action_map,
@@ -78,21 +79,8 @@ class AlfworldStepTool(BaseTool):
             session.touch()
             self._update_agent_extra_fields(agent_data, session)
             return (
-                ToolResponse(
-                    text=format_tool_response(
-                        action=display_action,
-                        current_observation=(
-                            "Invalid action. Choose exactly one action from the admissible actions list.\n\n"
-                            f"{session.current_observation}"
-                        ),
-                        admissible_actions=session.admissible_actions,
-                        done=session.done,
-                        success=session.success,
-                        score=session.last_score,
-                        step_id=session.step_id,
-                    )
-                ),
-                -0.1,
+                ToolResponse(text=INVALID_TOOL_RESPONSE_TEXT),
+                0.0,
                 snapshot(session),
             )
 

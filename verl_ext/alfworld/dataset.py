@@ -9,23 +9,11 @@ SYSTEM_PROMPT_TEMPLATE = """In this environment you have access to a set of tool
 Here are available functions in JSONSchema format:
 
 {tool_schema}
-In your response, you need to first conduct function calling to perform the next action if needed. The function calling is enclosed within <tool_call> </tool_call> tags.
+In your response, you should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
 
-The results of the function calls will be given back to you after execution, and you can continue to call functions until you get the final answer for the user's query.
+Once you have finished your reasoning, you should choose exactly one admissible action for the current step and call the tool by presenting the function call within <tool_call> </tool_call> tags.
 
-Important rules:
-
-At each round, call exactly one function.
-The function arguments must contain exactly one action.
-You must choose the action from the admissible actions provided in the current situation.
-Do not invent actions that are not in the admissible action list.
-If the environment indicates the task is finished, stop calling functions and provide a short plain-text final answer.
-Keep your output concise and focused on the next action.
-
-For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
-<tool_call>
-{{"name": <function-name>, "arguments": <args-json-object>}}
-</tool_call>"""
+The results of the function calls will be given back to you after execution, and you can continue to call functions until you get the final answer for the user's query."""
 
 
 USER_PROMPT_TEMPLATE = """Your task is: {task_description}
@@ -86,7 +74,7 @@ def build_dataset_row(
 ) -> dict[str, Any]:
     return {
         "data_source": data_source,
-        "agent_name": "tool_agent",
+        "agent_name": "alfworld_tool_agent",
         "index": index,
         "split": split,
         "prompt": [

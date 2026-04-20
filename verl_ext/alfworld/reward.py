@@ -18,16 +18,15 @@ def compute_score(
     ground_truth: str,
     extra_info: dict[str, Any] | None = None,
     *,
-    success_reward: float = 10.0,
+    success_reward: float = 1.0,
     **kwargs,
 ) -> dict[str, Any]:
     extra_info = extra_info or {}
-    tool_rewards = _as_float_list(extra_info.get("tool_rewards"))
     success = bool(extra_info.get("success", False))
     invalid_action_count = int(extra_info.get("invalid_action_count", 0))
     final_env_score = float(extra_info.get("final_env_score", 0.0))
 
-    score = (success_reward if success else 0.0) + sum(tool_rewards)
+    score = success_reward if success else 0.0
     return {
         "score": float(score),
         "success": success,
