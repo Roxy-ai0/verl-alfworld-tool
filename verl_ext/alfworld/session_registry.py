@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .utils import build_single_game_env, close_env_quietly
+from verl_ext.alfworld.utils import build_single_game_env, close_env_quietly
 
 
 @dataclass

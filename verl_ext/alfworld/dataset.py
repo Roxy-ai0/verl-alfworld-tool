@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from .utils import render_actions_json
+from verl_ext.alfworld.utils import render_actions_json
 
 
 SYSTEM_PROMPT_TEMPLATE = """In this environment you have access to a set of tools you can use to assist with the user query. You may perform multiple rounds of function calls. In each round, you should call exactly one function.

@@ -5,9 +5,9 @@ from typing import Any
 from verl.tools.base_tool import BaseTool
 from verl.tools.schemas import OpenAIFunctionToolSchema, ToolResponse
 
-from .agent_loop import INVALID_TOOL_RESPONSE_TEXT
-from .session_registry import get_or_create_session, mark_finished, snapshot
-from .utils import (
+from verl_ext.alfworld.agent_loop import INVALID_TOOL_RESPONSE_TEXT
+from verl_ext.alfworld.session_registry import get_or_create_session, mark_finished, snapshot
+from verl_ext.alfworld.utils import (
     admissible_action_map,
     extract_task_and_observation,
     first_batch_item,

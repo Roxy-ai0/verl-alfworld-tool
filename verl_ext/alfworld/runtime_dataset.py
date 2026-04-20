@@ -2,8 +2,8 @@ import copy
 
 from verl.utils.dataset.rl_dataset import RLHFDataset
 
-from . import agent_loop as _agent_loop  # noqa: F401
-from .dataset import build_system_prompt
+from verl_ext.alfworld import agent_loop as _agent_loop  # noqa: F401
+from verl_ext.alfworld.dataset import build_system_prompt
 
 
 class AlfworldRLDataset(RLHFDataset):
