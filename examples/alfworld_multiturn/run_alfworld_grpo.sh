@@ -33,6 +33,7 @@ export TMP
 export TEMP
 export RAY_TMPDIR
 export VLLM_USE_V1="${VLLM_USE_V1:-1}"
+export VLLM_USE_TRUST_REMOTE_CODE="${VLLM_USE_TRUST_REMOTE_CODE:-1}"
 
 python3 -m verl.trainer.main_ppo \
     --config-path="$CONFIG_PATH" \
@@ -46,6 +47,7 @@ python3 -m verl.trainer.main_ppo \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     actor_rollout_ref.model.path="$MODEL_PATH" \
+    actor_rollout_ref.model.trust_remote_code=True \
     actor_rollout_ref.model.override_config.attn_implementation=eager \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \

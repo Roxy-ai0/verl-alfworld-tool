@@ -23,6 +23,7 @@ reward:
 actor_rollout_ref:
   hybrid_engine: True
   model:
+    trust_remote_code: True
     override_config:
       attn_implementation: eager
   actor:
