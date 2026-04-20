@@ -24,6 +24,7 @@ import ray
 import vllm.entrypoints.cli.serve
 from packaging import version
 from ray.actor import ActorHandle
+from transformers import PreTrainedTokenizerBase
 from vllm import SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.cli.serve import run_headless
@@ -75,6 +76,19 @@ else:
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
+
+
+def _ensure_transformers_tokenizer_compat() -> None:
+    # Some vLLM + transformers combinations expect this property to exist on
+    # tokenizer instances, but older slow tokenizers like Qwen2Tokenizer may
+    # only expose all_special_tokens. Provide a conservative fallback so the
+    # rollout server can initialize.
+    if hasattr(PreTrainedTokenizerBase, "all_special_tokens_extended"):
+        return
+
+    PreTrainedTokenizerBase.all_special_tokens_extended = property(  # type: ignore[attr-defined]
+        lambda self: list(getattr(self, "all_special_tokens", []))
+    )
 
 
 class vLLMHttpServer:
@@ -372,6 +386,7 @@ class vLLMHttpServer:
             await self.run_headless(server_args)
 
     async def run_server(self, args: argparse.Namespace):
+        _ensure_transformers_tokenizer_compat()
         engine_args = AsyncEngineArgs.from_cli_args(args)
         usage_context = UsageContext.OPENAI_API_SERVER
         vllm_config = engine_args.create_engine_config(usage_context=usage_context)
