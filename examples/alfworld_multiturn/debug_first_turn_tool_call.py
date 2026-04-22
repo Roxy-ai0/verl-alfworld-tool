@@ -42,7 +42,12 @@ In your response, you should first reason step-by-step about the current situati
 
 Once you have finished your reasoning, you should choose exactly one admissible action for the current step and call the tool by presenting the function call within <tool_call> </tool_call> tags.
 
-The results of the function calls will be given back to you after execution, and you can continue to call functions until you get the final answer for the user's query."""
+The results of the function calls will be given back to you after execution, and you can continue to call functions until you complete the task.
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{{"name": <function-name>, "arguments": <args-json-object>}}
+</tool_call>"""
 
 DEFAULT_USER_PROMPT_TEMPLATE = """Your task is: {task_description}
 
